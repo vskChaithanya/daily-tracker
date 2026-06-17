@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Glassmorphism Tracker</title>
+    
+    <!-- Brython for running Python in the browser -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/brython/3.12.0/brython.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/brython/3.12.0/brython_stdlib.js"></script>
+    
+    <!-- Three.js for 3D Background -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+
+    <style>
+        /* === CORE RESET & BACKGROUND === */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Outfit', sans-serif;
+        }
+        body {
+            background-color: #0f172a;
+            color: #ffffff;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden; /* Prevent scrolling the whole page */
+        }
+
+        /* 3D Canvas Background */
+        #bg-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+        }
+
+        /* === GLASSMORPHISM UI === */
+        .glass-panel {
+            position: relative;
+            z-index: 10;
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 24px;
+            padding: 40px;
+            width: 90%;
+            max-width: 500px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            display: flex;
+            flex-direction: column;
+            max-height: 90vh; /* Keep it on screen */
+        }
+
+        /* Hide screens initially */
+        #welcome-screen, #tracker-screen {
+            display: none;
+        }
+
+        /* === TYPOGRAPHY === */
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 800;
+            margin-bottom: 10px;
+            background: linear-gradient(to right, #38bdf8, #818cf8, #e879f9);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        h2 {
+            font-size: 1.5rem;
+            margin-bottom: 5px;
+            color: #f1f5f9;
+        }
+        p {
+            color: #94a3b8;
+            margin-bottom: 25px;
+            font-size: 1rem;
+        }
+
+        /* === INPUTS & BUTTONS (THE BLANKS) === */
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 25px;
+        }
+        .custom-input {
+            flex-grow: 1;
+            background: rgba(0, 0, 0, 0.3);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 14px 18px;
+            color: #ffffff;
+            font-size: 16px;
+            outline: none;
+            transition: all 0.3s ease;
+        }
+        .custom-input::placeholder {
+            color: rgba(255, 255, 255, 0.3);
+        }
+        .custom-input:focus {
+            border-color: #38bdf8;
+            box-shadow: 0 0 15px rgba(56, 189, 248, 0.2);
+            background: rgba(0, 0, 0, 0.5);
+        }
+        .custom-btn {
+            background: linear-gradient(135deg, #0ea5e9, #6366f1);
+            color: white;
+            border: none;
+            padding: 0 24px;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4);
+        }
+        .custom-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(99, 102, 241, 0.6);
+            opacity: 0.9;
+        }
+        .custom-btn:active {
+            transform: translateY(1px);
+        }
+
+        /* === PROGRESS BAR === */
+        .progress-container {
+            margin-bottom: 25px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 999px;
+            height: 12px;
+            width: 100%;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        .progress-fill {
+            height: 100%;
+            width: 0%; /* Python updates this */
+            background: linear-gradient(90deg, #10b981, #34d399); /* Green gradient */
+            border-radius: 999px;
+            transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
+        }
+        .stats-text {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.9rem;
+            color: #cbd5e1;
+            margin-bottom: 8px;
+        }
+
+        /* === TASK LIST === */
+        #task-list {
+            list-style: none;
+            overflow-y: auto;
+            max-height: 300px;
+            padding-right: 5px;
+        }
+        /* Custom scrollbar */
+        #task-list::-webkit-scrollbar { width: 6px; }
+        #task-list::-webkit-scrollbar-track { background: transparent; }
+        #task-list::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 10px; }
+
+        /* Individual Task Item Bubble */
+        .task-item {
+            display: flex;
+            align-items: center;
+            background: rgba(255, 255, 255, 0.08);
+            padding: 16px;
+            border-radius: 16px;
+            margin-bottom: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            transition: all 0.3s ease;
+        }
+        .task-item:hover {
+            background: rgba(255, 255, 255, 0.12);
+            transform: translateX(5px);
+        }
+
+        /* === THE MAGIC GREEN CHECKBOX === */
+        .custom-checkbox {
+            appearance: none;
+            -webkit-appearance: none;
+            width: 28px;
+            height: 28px;
+            border: 2px solid #38bdf8; /* Blue border when unchecked */
+            border-radius: 8px;
+            margin-right: 15px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.4);
+            transition: all 0.3s ease;
+            flex-shrink: 0;
+        }
+        /* The tick mark hidden inside */
+        .custom-checkbox::after {
+            content: "✓";
+            color: white;
+            font-size: 20px;
+            font-weight: 800;
+            display: none; /* Hidden until checked */
+        }
+        /* When user clicks it */
+        .custom-checkbox:checked {
+            background: #10b981; /* Fills with Green */
+            border-color: #10b981;
+            box-shadow: 0 0 15px rgba(16, 185, 129, 0.4);
+            transform: scale(1.1); /* Tiny pop animation */
+        }
+        .custom-checkbox:checked::after {
+            display: block; /* Show the tick */
+        }
+
+        /* Task Text */
+        .task-text {
+            flex-grow: 1;
+            font-size: 1.1rem;
+            color: #f8fafc;
+            transition: all 0.3s ease;
+        }
+        .task-text.completed {
+            text-decoration: line-through;
+            color: #64748b;
+        }
+
+        /* Delete Button */
+        .delete-btn {
+            background: transparent;
+            border: none;
+            color: #ef4444;
+            font-size: 28px;
+            cursor: pointer;
+            padding: 0 8px;
+            transition: all 0.2s ease;
+            opacity: 0.5;
+        }
+        .task-item:hover .delete-btn {
+            opacity: 1;
+        }
+        .delete-btn:hover {
+            color: #f87171;
+            transform: scale(1.2) rotate(90deg); /* Spin on hover */
+        }
+    </style>
+</head>
+<body onload="brython()">
+
+    <!-- 3D Canvas Background -->
+    <canvas id="bg-canvas"></canvas>
+
+    <!-- Glassmorphism Container -->
+    <div class="glass-panel">
+        
+        <!-- SCREEN 1: Ask for Name -->
+        <div id="welcome-screen">
+            <h1>Welcome!</h1>
+            <p>Let's set up your space. What is your name?</p>
+            <div class="input-group">
+                <input id="name-input" type="text" class="custom-input" placeholder="Enter your name...">
+                <button id="save-name-btn" class="custom-btn">Enter</button>
+            </div>
+        </div>
+
+        <!-- SCREEN 2: Main Tracker -->
+        <div id="tracker-screen">
+            <h1 id="greeting-title">Hello!</h1>
+            <p>Refresh every day. Build habits.</p>
+
+            <div class="input-group">
+                <input id="task-input" type="text" class="custom-input" placeholder="Add a new daily task...">
+                <button id="add-btn" class="custom-btn">Add</button>
+            </div>
+
+            <div>
+                <div class="stats-text">
+                    <span id="progress-text">0 of 0 completed</span>
+                    <span id="date-display"></span>
+                </div>
+                <div class="progress-container">
+                    <div id="progress-bar" class="progress-fill"></div>
+                </div>
+            </div>
+
+            <ul id="task-list">
+                <!-- Python injects tasks here -->
+            </ul>
+        </div>
+    </div>
+
+    <!-- 3D Background Logic (JavaScript) -->
+    <script>
+        const canvas = document.getElementById('bg-canvas');
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ canvas: canvas, alpha: true, antialias: true });
+        
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        camera.position.z = 15;
+
+        // Add vibrant lights
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+        
+        const pointLight1 = new THREE.PointLight(0xff00ff, 1); // Pink
+        pointLight1.position.set(10, 10, 10);
+        scene.add(pointLight1);
+        
+        const pointLight2 = new THREE.PointLight(0x00ffff, 1); // Cyan
+        pointLight2.position.set(-10, -10, 10);
+        scene.add(pointLight2);
+
+        const objects = [];
+        const geometries = [
+            new THREE.TorusGeometry(1.5, 0.5, 16, 100),
+            new THREE.IcosahedronGeometry(1.5, 0),
+            new THREE.OctahedronGeometry(1.5, 0)
+        ];
+        
+        const materials = [
+            new THREE.MeshStandardMaterial({ color: 0x38bdf8, roughness: 0.2, metalness: 0.8 }),
+            new THREE.MeshStandardMaterial({ color: 0xe879f9, roughness: 0.2, metalness: 0.8 }),
+            new THREE.MeshStandardMaterial({ color: 0xfcd34d, roughness: 0.2, metalness: 0.8 })
+        ];
+
+        // Create 12 floating objects
+        for(let i=0; i<12; i++) {
+            const geo = geometries[Math.floor(Math.random() * geometries.length)];
+            const mat = materials[Math.floor(Math.random() * materials.length)];
+            const mesh = new THREE.Mesh(geo, mat);
+            
+            mesh.position.x = (Math.random() - 0.5) * 35;
+            mesh.position.y = (Math.random() - 0.5) * 25;
+            mesh.position.z = (Math.random() - 0.5) * 10 - 5;
+            
+            mesh.rotation.x = Math.random() * Math.PI;
+            mesh.rotation.y = Math.random() * Math.PI;
+            
+            mesh.userData = {
+                rx: (Math.random() - 0.5) * 0.02,
+                ry: (Math.random() - 0.5) * 0.02,
+                px: (Math.random() - 0.5) * 0.05,
+                py: (Math.random() - 0.5) * 0.05
+            };
+            
+            scene.add(mesh);
+            objects.push(mesh);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            objects.forEach(obj => {
+                obj.rotation.x += obj.userData.rx;
+                obj.rotation.y += obj.userData.ry;
+                obj.position.x += obj.userData.px;
+                obj.position.y += obj.userData.py;
+
+                // Bounce off invisible walls
+                if (obj.position.x > 20 || obj.position.x < -20) obj.userData.px *= -1;
+                if (obj.position.y > 15 || obj.position.y < -15) obj.userData.py *= -1;
+            });
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+
+    <!-- Python Logic inside HTML -->
+    <script type="text/python">
+        from browser import document, window, html
+        import json
+        from datetime import datetime
+
+        # -- Local Storage Keys --
+        # These ensure your tasks and name stay saved across days
+        STORAGE_KEY = "daily_tasks_app_data"
+        NAME_KEY = "daily_tasks_user_name"
+        DATE_KEY = "daily_tasks_last_date"
+
+        # State Variables
+        tasks = []
+        user_name = ""
+
+        def init_app():
+            global tasks, user_name
+            
+            # 1. Load Name
+            saved_name = window.localStorage.getItem(NAME_KEY)
+            if saved_name:
+                user_name = saved_name
+                show_tracker()
+            else:
+                document["welcome-screen"].style.display = "block"
+
+            # 2. Check Date & Load Tasks
+            today_str = datetime.now().strftime("%b %d, %Y")
+            document["date-display"].text = today_str
+            
+            last_date = window.localStorage.getItem(DATE_KEY)
+            saved_tasks = window.localStorage.getItem(STORAGE_KEY)
+            
+            if saved_tasks:
+                tasks = json.loads(saved_tasks)
+            
+            # NEW DAY RESET LOGIC: 
+            # If the date changed, uncheck all tasks to start fresh!
+            if last_date != today_str:
+                for t in tasks:
+                    t['completed'] = False
+                window.localStorage.setItem(DATE_KEY, today_str)
+                save_tasks()
+                
+            if user_name:
+                render()
+
+        def save_tasks():
+            window.localStorage.setItem(STORAGE_KEY, json.dumps(tasks))
+
+        def show_tracker():
+            document["welcome-screen"].style.display = "none"
+            document["tracker-screen"].style.display = "block"
+            
+            # Set Greeting based on time
+            hour = datetime.now().hour
+            greeting = "Good Morning"
+            if 12 <= hour < 17:
+                greeting = "Good Afternoon"
+            elif hour >= 17:
+                greeting = "Good Evening"
+                
+            document["greeting-title"].text = f"{greeting}, {user_name.upper()}!"
+
+        def save_name(ev):
+            global user_name
+            inp = document["name-input"].value.strip()
+            if inp:
+                user_name = inp
+                window.localStorage.setItem(NAME_KEY, user_name)
+                # Also set date for the first time
+                today_str = datetime.now().strftime("%b %d, %Y")
+                window.localStorage.setItem(DATE_KEY, today_str)
+                show_tracker()
+                render()
+
+        def render():
+            task_list = document["task-list"]
+            task_list.clear()
+            
+            completed_count = 0
+            
+            for i, task in enumerate(tasks):
+                if task['completed']:
+                    completed_count += 1
+                    
+                # Create the nice bubble container
+                li = html.DIV(Class="task-item")
+                
+                # Checkbox
+                chk = html.INPUT(type="checkbox", Class="custom-checkbox")
+                chk.checked = task['completed']
+                
+                def make_toggle(idx):
+                    def _toggle(ev):
+                        tasks[idx]['completed'] = not tasks[idx]['completed']
+                        save_tasks()
+                        render()
+                    return _toggle
+                    
+                chk.bind("change", make_toggle(i))
+                
+                # Text
+                txt_class = "task-text completed" if task['completed'] else "task-text"
+                txt = html.SPAN(task['desc'], Class=txt_class)
+                
+                # Delete Button ('×' character)
+                del_btn = html.BUTTON("×", Class="delete-btn")
+                
+                def make_delete(idx):
+                    def _delete(ev):
+                        del tasks[idx]
+                        save_tasks()
+                        render()
+                    return _delete
+                    
+                del_btn.bind("click", make_delete(i))
+                
+                # Assemble
+                li <= chk
+                li <= txt
+                li <= del_btn
+                task_list <= li
+
+            # Update Progress Bar
+            total = len(tasks)
+            document["progress-text"].text = f"{completed_count} of {total} completed"
+            
+            percentage = 0 if total == 0 else (completed_count / total) * 100
+            document["progress-bar"].style.width = f"{percentage}%"
+
+        def add_task(ev):
+            inp = document["task-input"]
+            desc = inp.value.strip()
+            if desc:
+                tasks.append({'desc': desc, 'completed': False})
+                inp.value = ""
+                save_tasks()
+                render()
+
+        # --- Event Listeners ---
+        document["save-name-btn"].bind("click", save_name)
+        document["add-btn"].bind("click", add_task)
+        
+        def check_name_enter(ev):
+            if ev.key == "Enter": save_name(ev)
+        document["name-input"].bind("keypress", check_name_enter)
+        
+        def check_task_enter(ev):
+            if ev.key == "Enter": add_task(ev)
+        document["task-input"].bind("keypress", check_task_enter)
+
+        # Start the app
+        init_app()
+    </script>
+</body>
+</html>
